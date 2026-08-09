@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>DOT PLAYER</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:       #0b0b0b;
+            --surface:  #161616;
+            --surface2: #1e1e1e;
+            --border:   #2a2a2a;
+            --accent:   #0984e3;
+            --warn:     #e17055;
+            --ok:       #00b894;
+            --text:     #e8e8e8;
+            --muted:    #888;
+            --yellow:   #fdcb6e;
+        }
+
+        body {
+            font-family: -apple-system, "Helvetica Neue", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100dvh;
+            padding: 16px;
+            -webkit-text-size-adjust: 100%;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+        }
+
+        h1 {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: var(--accent);
+            margin-bottom: 4px;
+        }
+        .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+
+        .section {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 10px;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            font-size: 14px;
+            color: var(--text);
+            background: transparent;
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+        }
+        input[type="file"]::-webkit-file-upload-button {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        /* ---- canvas wrapper ---- */
+        .canvas-wrap {
+            width: 100%;
+            background: #000;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            /* 16:9 aspect ratio placeholder まで最低高さを確保 */
+            aspect-ratio: 16 / 9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #screen {
+            display: block;
+            /* キャンバス自体は内部解像度に合わせ、wrapperに収める */
+            max-width: 100%;
+            max-height: 100%;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+
+        /* ---- controls ---- */
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            padding: 10px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: opacity 0.15s, transform 0.1s;
+            -webkit-tap-highlight-color: transparent;
+            white-space: nowrap;
+        }
+        .btn:active { transform: scale(0.97); opacity: 0.85; }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .btn-accent { background: var(--accent); color: #fff; }
+        .btn-warn   { background: var(--warn);   color: #fff; }
+        .btn-ghost  { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+        /* seek bar */
+        .seekbar-wrap {
+            position: relative;
+            height: 10px;
+            background: var(--surface2);
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 8px;
+            border: 1px solid var(--border);
+            touch-action: none;
+        }
+        #seekFill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent), var(--ok));
+            border-radius: 5px;
+            pointer-events: none;
+        }
+        #seekHandle {
+            position: absolute;
+            top: 50%;
+            left: 0%;
+            transform: translate(-50%, -50%);
+            width: 16px;
+            height: 16px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 4px rgba(0,0,0,0.6);
+            pointer-events: none;
+        }
+
+        select {
+            font-size: 13px;
+            color: var(--text);
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 10px;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        label.ctrl-label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        #status {
+            font-size: 12px;
+            font-family: ui-monospace, "SF Mono", monospace;
+            color: var(--yellow);
+            min-height: 20px;
+            word-break: break-all;
+        }
+        #timeInfo {
+            font-size: 12px;
+            color: var(--muted);
+            font-family: ui-monospace, "SF Mono", monospace;
+        }
+
+        #audioSection { display: none; }
+        audio {
+            width: 100%;
+            accent-color: var(--accent);
+            border-radius: 8px;
+        }
+
+        .row-between {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>DOT PLAYER</h1>
+    <p class="subtitle">animation_data.txt + 音声ファイルを再生</p>
+
+    <div class="section">
+        <div class="section-title">1 · テキストデータ（animation_data.txt）</div>
+        <input type="file" id="txtFile" accept=".txt,text/plain">
+    </div>
+
+    <div class="section" id="audioSection">
+        <div class="section-title">2 · 音声ファイル（任意）</div>
+        <input type="file" id="audioFile" accept="audio/*,video/mp4">
+        <audio id="audioPlayer" controls style="margin-top:10px; display:none;"></audio>
+    </div>
+
+    <!-- キャンバスをwrapperで包む -->
+    <div class="canvas-wrap">
+        <canvas id="screen" width="320" height="180"></canvas>
+    </div>
+
+    <div class="seekbar-wrap" id="seekbarWrap">
+        <div id="seekFill"></div>
+        <div id="seekHandle"></div>
+    </div>
+
+    <div class="row-between">
+        <span id="timeInfo">-- / --</span>
+        <span id="status">テキストファイルを選択してください</span>
+    </div>
+
+    <div class="controls">
+        <button id="playBtn"  class="btn btn-accent" disabled>▶ 再生</button>
+        <button id="pauseBtn" class="btn btn-warn"   disabled style="display:none;">⏸ 一時停止</button>
+        <button id="stopBtn"  class="btn btn-ghost"  disabled>⏹ 停止</button>
+        <label class="ctrl-label">FPS</label>
+        <select id="fpsSelect">
+            <option value="5">5 fps</option>
+            <option value="10" selected>10 fps</option>
+            <option value="15">15 fps</option>
+            <option value="24">24 fps</option>
+        </select>
+        <label class="ctrl-label" style="margin-left:4px;">カラー</label>
+        <select id="paletteSelect">
+            <option value="gray">グレー</option>
+            <option value="green">グリーン</option>
+            <option value="amber">アンバー</option>
+            <option value="blue">ブルー</option>
+        </select>
+    </div>
+</div>
+
+<script>
+// ============================================================
+//  DOM refs
+// ============================================================
+const $ = id => document.getElementById(id);
+
+const canvas      = $('screen');
+const ctx         = canvas.getContext('2d');
+const playBtn     = $('playBtn');
+const pauseBtn    = $('pauseBtn');
+const stopBtn     = $('stopBtn');
+const statusEl    = $('status');
+const timeInfoEl  = $('timeInfo');
+const seekFill    = $('seekFill');
+const seekHandle  = $('seekHandle');
+const seekWrap    = $('seekbarWrap');
+const audioPlayer = $('audioPlayer');
+const audioSec    = $('audioSection');
+
+// ============================================================
+//  状態
+// ============================================================
+let frames       = [];
+let frameW       = 0;
+let frameH       = 0;
+let currentFrame = 0;
+let rafId        = null;
+let isPlaying    = false;
+let lastTs       = null;
+let frameAccum   = 0;
+let audioReady   = false;  // 音声ファイルが読み込まれたか
+
+// ============================================================
+//  カラーパレット（0〜9 → 0〜255 フルレンジ）
+// ============================================================
+const PALETTES = {
+    gray:  v => { const c = Math.round(v * 255 / 9); return [c, c, c]; },
+    green: v => [0, Math.round(v * 255 / 9), 0],
+    amber: v => [Math.round(v * 255 / 9), Math.round(v * 160 / 9), 0],
+    blue:  v => [0, Math.round(v * 90 / 9), Math.round(v * 255 / 9)],
+};
+
+// ============================================================
+//  テキストファイル読み込み
+// ============================================================
+$('txtFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setStatus('読み込み中...');
+    const reader = new FileReader();
+    reader.onload  = ev => parseFrames(ev.target.result);
+    reader.onerror = () => setStatus('⚠️ ファイル読み込みエラー');
+    reader.readAsText(file, 'utf-8');
+});
+
+function parseFrames(text) {
+    // CR/LF 両対応・空行除去
+    const lines = text.split(/\r?\n/).map(l => l.trimEnd()).filter(l => l.length > 0);
+
+    if (lines.length === 0) { setStatus('⚠️ フレームデータが空です'); return; }
+
+    frameW = lines[0].length;
+
+    // 幅が一致する行のみ有効とする
+    const valid = lines.filter(l => l.length === frameW);
+    if (valid.length === 0) { setStatus('⚠️ 有効な行がありません'); return; }
+
+    // 16:9 でフレーム高さを推定
+    frameH = Math.max(1, Math.round(frameW * 9 / 16));
+
+    // validLines を frameH 行ごとにフレームへ
+    frames = [];
+    for (let i = 0; i + frameH <= valid.length; i += frameH) {
+        frames.push(valid.slice(i, i + frameH));
+    }
+
+    // フレームが取れない → 1行=1フレーム（旧形式）
+    if (frames.length === 0) {
+        frames = valid.map(l => [l]);
+        frameH = 1;
+    }
+
+    // キャンバスサイズをデータに合わせる
+    canvas.width  = frameW;
+    canvas.height = frameH;
+
+    currentFrame = 0;
+    isPlaying    = false;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+
+    renderFrame(0);
+    updateSeek();
+    updateTimeInfo();
+
+    playBtn.disabled  = false;
+    stopBtn.disabled  = false;
+    pauseBtn.disabled = true;
+    playBtn.style.display  = '';
+    pauseBtn.style.display = 'none';
+
+    const fps = parseInt($('fpsSelect').value);
+    setStatus(`✅ ${frames.length} フレーム読み込み完了（${frameW}×${frameH}px）`);
+}
+
+// ============================================================
+//  音声ファイル読み込み
+// ============================================================
+$('audioFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (audioPlayer._blobUrl) URL.revokeObjectURL(audioPlayer._blobUrl);
+    const url = URL.createObjectURL(file);
+    audioPlayer._blobUrl = url;
+    audioPlayer.src = url;
+    audioPlayer.style.display = '';
+    audioSec.style.display = '';
+    audioReady = true;
+});
+
+// 音声セクションは常時表示
+audioSec.style.display = '';
+
+// ============================================================
+//  フレーム描画
+// ============================================================
+function renderFrame(index) {
+    const fLines = frames[index];
+    if (!fLines) return;
+
+    const palette = PALETTES[$('paletteSelect').value] || PALETTES.gray;
+    const imgData = ctx.createImageData(frameW, frameH);
+    const d = imgData.data;
+
+    for (let y = 0; y < frameH; y++) {
+        const row = fLines[y] || '';
+        for (let x = 0; x < frameW; x++) {
+            const ch = row.charCodeAt(x) - 48; // '0'=48
+            const v  = (ch >= 0 && ch <= 9) ? ch : 0;
+            const [r, g, b] = palette(v);
+            const i = (y * frameW + x) << 2;
+            d[i]   = r;
+            d[i+1] = g;
+            d[i+2] = b;
+            d[i+3] = 255;
+        }
+    }
+    ctx.putImageData(imgData, 0, 0);
+}
+
+// ============================================================
+//  再生ループ
+// ============================================================
+function startPlayback() {
+    if (isPlaying || frames.length === 0) return;
+    isPlaying  = true;
+    lastTs     = null;
+    frameAccum = 0;
+
+    playBtn.style.display  = 'none';
+    pauseBtn.style.display = '';
+    pauseBtn.disabled      = false;
+
+    if (audioReady && audioPlayer.paused) {
+        const fps = parseInt($('fpsSelect').value);
+        audioPlayer.currentTime = currentFrame / fps;
+        audioPlayer.play().catch(() => {});
+    }
+
+    rafId = requestAnimationFrame(loop);
+}
+
+function loop(ts) {
+    if (!isPlaying) return;
+
+    if (lastTs === null) lastTs = ts;
+    const delta = ts - lastTs;
+    lastTs = ts;
+    frameAccum += delta;
+
+    const fps        = parseInt($('fpsSelect').value);
+    const msPerFrame = 1000 / fps;
+
+    let advanced = false;
+    while (frameAccum >= msPerFrame) {
+        frameAccum -= msPerFrame;
+        currentFrame++;
+        advanced = true;
+        if (currentFrame >= frames.length) {
+            currentFrame = frames.length - 1;
+            renderFrame(currentFrame);
+            updateSeek();
+            updateTimeInfo();
+            _stopInternal(false); // リセットなしで停止
+            return;
+        }
+    }
+
+    renderFrame(currentFrame);
+    updateSeek();
+    updateTimeInfo();
+
+    rafId = requestAnimationFrame(loop);
+}
+
+function pausePlayback() {
+    if (!isPlaying) return;
+    isPlaying = false;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+    playBtn.style.display  = '';
+    pauseBtn.style.display = 'none';
+    pauseBtn.disabled      = true;
+    if (audioReady && !audioPlayer.paused) audioPlayer.pause();
+}
+
+// reset=true → 先頭に戻す、false → 現在位置のまま停止（末尾到達時）
+function _stopInternal(reset) {
+    isPlaying = false;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+    if (reset) {
+        currentFrame = 0;
+        renderFrame(0);
+        updateSeek();
+        updateTimeInfo();
+        if (audioReady) {
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+        }
+    } else {
+        if (audioReady) audioPlayer.pause();
+    }
+    playBtn.style.display  = '';
+    playBtn.disabled       = false;
+    pauseBtn.style.display = 'none';
+    pauseBtn.disabled      = true;
+}
+
+function stopPlayback() { _stopInternal(true); }
+
+// ============================================================
+//  ボタン
+// ============================================================
+playBtn.addEventListener ('click', startPlayback);
+pauseBtn.addEventListener('click', pausePlayback);
+stopBtn.addEventListener ('click', stopPlayback);
+
+$('fpsSelect').addEventListener('change', () => {
+    if (isPlaying) { pausePlayback(); startPlayback(); }
+});
+
+$('paletteSelect').addEventListener('change', () => {
+    renderFrame(currentFrame);
+});
+
+// ============================================================
+//  シークバー（クリック + ドラッグ対応）
+// ============================================================
+function updateSeek() {
+    if (frames.length === 0) return;
+    const pct = frames.length > 1
+        ? (currentFrame / (frames.length - 1)) * 100
+        : 0;
+    seekFill.style.width  = pct + '%';
+    seekHandle.style.left = pct + '%';
+}
+
+function seekTo(clientX) {
+    if (frames.length === 0) return;
+    const rect = seekWrap.getBoundingClientRect();
+    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    currentFrame = Math.round(pct * (frames.length - 1));
+    renderFrame(currentFrame);
+    updateSeek();
+    updateTimeInfo();
+    if (audioReady) {
+        const fps = parseInt($('fpsSelect').value);
+        audioPlayer.currentTime = currentFrame / fps;
+    }
+}
+
+let seeking = false;
+
+seekWrap.addEventListener('mousedown', e => {
+    seeking = true;
+    seekTo(e.clientX);
+});
+window.addEventListener('mousemove', e => {
+    if (seeking) seekTo(e.clientX);
+});
+window.addEventListener('mouseup', () => { seeking = false; });
+
+seekWrap.addEventListener('touchstart', e => {
+    seeking = true;
+    seekTo(e.touches[0].clientX);
+}, { passive: true });
+seekWrap.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (seeking) seekTo(e.touches[0].clientX);
+}, { passive: false });
+window.addEventListener('touchend', () => { seeking = false; });
+
+// ============================================================
+//  時間表示
+// ============================================================
+function updateTimeInfo() {
+    if (frames.length === 0) { timeInfoEl.textContent = '-- / --'; return; }
+    const fps   = parseInt($('fpsSelect').value);
+    const cur   = (currentFrame / fps).toFixed(1);
+    const total = ((frames.length - 1) / fps).toFixed(1);
+    timeInfoEl.textContent = `${cur}s / ${total}s  (fr ${currentFrame + 1} / ${frames.length})`;
+}
+
+function setStatus(msg) { statusEl.textContent = msg; }
+</script>
+</body>
+</html>
