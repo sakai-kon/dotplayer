@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>DOT PLAYER</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:       #0b0b0b;
+            --surface:  #161616;
+            --surface2: #1e1e1e;
+            --border:   #2a2a2a;
+            --accent:   #0984e3;
+            --warn:     #e17055;
+            --ok:       #00b894;
+            --text:     #e8e8e8;
+            --muted:    #888;
+            --yellow:   #fdcb6e;
+        }
+
+        html { height: 100%; -webkit-text-size-adjust: 100%; }
+
+        body {
+            font-family: -apple-system, "Helvetica Neue", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: -webkit-fill-available;
+            min-height: 100dvh;
+            padding: 16px;
+            padding-top: max(16px, env(safe-area-inset-top));
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+            padding-left: max(16px, env(safe-area-inset-left));
+            padding-right: max(16px, env(safe-area-inset-right));
+            -webkit-text-size-adjust: 100%;
+            -webkit-tap-highlight-color: transparent;
+            overscroll-behavior: none;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+        }
+
+        h1 {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: var(--accent);
+            margin-bottom: 4px;
+        }
+        .subtitle { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+
+        .section {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-bottom: 10px;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            font-size: 14px;
+            color: var(--text);
+            background: transparent;
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+        }
+        input[type="file"]::-webkit-file-upload-button {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        /* ---- canvas ---- */
+        #screen {
+            display: none;
+            width: 100%;
+            height: auto;
+            max-width: 100%;
+            background: #000;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            -webkit-transform: translateZ(0);
+            transform: translateZ(0);
+            touch-action: none;
+            margin-bottom: 12px;
+        }
+        #screen.active {
+            display: block;
+        }
+
+        /* ---- controls ---- */
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            -webkit-appearance: none;
+            appearance: none;
+            padding: 10px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: opacity 0.15s, transform 0.1s;
+            -webkit-tap-highlight-color: transparent;
+            white-space: nowrap;
+            touch-action: manipulation;
+        }
+        .btn:active { transform: scale(0.97); opacity: 0.85; }
+        .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+        .btn-accent { background: var(--accent); color: #fff; }
+        .btn-warn   { background: var(--warn);   color: #fff; }
+        .btn-ok     { background: var(--ok);     color: #fff; }
+        .btn-ghost  { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+        /* seek bar */
+        .seekbar-wrap {
+            position: relative;
+            height: 6px;
+            padding: 14px 0;
+            margin: -14px 0 -8px 0;
+            background: transparent;
+            cursor: pointer;
+            touch-action: none;
+        }
+        #seekTrack {
+            height: 6px;
+            background: var(--surface2);
+            border-radius: 3px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+        #seekFill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent), var(--ok));
+            border-radius: 3px;
+            pointer-events: none;
+            transition: width 0.05s linear;
+        }
+        #seekHandle {
+            position: absolute;
+            top: 50%;
+            left: 0%;
+            transform: translate(-50%, -50%);
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 4px rgba(0,0,0,0.6);
+            pointer-events: none;
+            transition: left 0.05s linear;
+        }
+
+        /* fps select */
+        select {
+            font-size: 16px; /* iOS Safariでの自動ズームを防止(16px以上) */
+            color: var(--text);
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 10px;
+            appearance: none;
+            -webkit-appearance: none;
+            touch-action: manipulation;
+        }
+
+        label.ctrl-label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        /* ---- status ---- */
+        #status {
+            font-size: 12px;
+            font-family: ui-monospace, "SF Mono", monospace;
+            color: var(--yellow);
+            min-height: 20px;
+            word-break: break-all;
+        }
+        #timeInfo {
+            font-size: 12px;
+            color: var(--muted);
+            font-family: ui-monospace, "SF Mono", monospace;
+        }
+
+        /* audio section */
+        #audioSection { display: none; }
+        audio {
+            width: 100%;
+            accent-color: var(--accent);
+            border-radius: 8px;
+        }
+
+        .row-between {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>DOT PLAYER</h1>
+    <p class="subtitle">animation_data.txt + 音声ファイルを再生</p>
+
+    <!-- ファイル読み込み -->
+    <div class="section">
+        <div class="section-title">1 · テキストデータ（animation_data.txt）</div>
+        <input type="file" id="txtFile" accept=".txt,text/plain">
+    </div>
+
+    <div class="section" id="audioSection">
+        <div class="section-title">2 · 音声ファイル（任意）</div>
+        <input type="file" id="audioFile" accept="audio/*,video/mp4">
+        <audio id="audioPlayer" controls style="margin-top:10px; display:none;"></audio>
+    </div>
+
+    <!-- プレビュー -->
+    <canvas id="screen"></canvas>
+
+    <!-- シークバー -->
+    <div class="seekbar-wrap" id="seekbarWrap">
+        <div id="seekTrack">
+            <div id="seekFill"></div>
+        </div>
+        <div id="seekHandle"></div>
+    </div>
+
+    <div class="row-between">
+        <span id="timeInfo">-- / --</span>
+        <span id="status">テキストファイルを選択してください</span>
+    </div>
+
+    <!-- コントロール -->
+    <div class="controls">
+        <button id="playBtn"  class="btn btn-accent" disabled>▶ 再生</button>
+        <button id="pauseBtn" class="btn btn-warn"   disabled style="display:none;">⏸ 一時停止</button>
+        <button id="stopBtn"  class="btn btn-ghost"  disabled>⏹ 停止</button>
+        <label class="ctrl-label">FPS</label>
+        <select id="fpsSelect">
+            <option value="5">5 fps</option>
+            <option value="10" selected>10 fps</option>
+            <option value="15">15 fps</option>
+            <option value="24">24 fps</option>
+        </select>
+        <label class="ctrl-label" style="margin-left:4px;">輝度</label>
+        <select id="paletteSelect">
+            <option value="gray">グレー</option>
+            <option value="green">グリーン</option>
+            <option value="amber">アンバー</option>
+            <option value="blue">ブルー</option>
+        </select>
+    </div>
+</div>
+
+<script>
+// ============================================================
+//  状態
+// ============================================================
+const $ = id => document.getElementById(id);
+
+const canvas      = $('screen');
+let ctx           = canvas.getContext('2d', { willReadFrequently: false });
+const playBtn     = $('playBtn');
+const pauseBtn    = $('pauseBtn');
+const stopBtn2    = $('stopBtn');
+const statusEl    = $('status');
+const timeInfoEl  = $('timeInfo');
+const seekFill    = $('seekFill');
+const seekHandle  = $('seekHandle');
+const seekWrap    = $('seekbarWrap');
+const audioPlayer = $('audioPlayer');
+const audioSec    = $('audioSection');
+
+let frames        = [];   // 各フレームの行文字列（輝度数値文字列）
+let frameW        = 0;
+let frameH        = 0;
+let currentFrame  = 0;
+let rafId         = null;
+let isPlaying     = false;
+let lastTimestamp  = null;
+let frameAccum    = 0;    // 経過ms 蓄積
+
+// カラーパレット（0–9 → RGB）  ※ 9段階を 0–255 にマッピング
+const PALETTES = {
+    gray:  (v) => { const c = Math.round(v * 255 / 9); return [c, c, c]; },
+    green: (v) => [0, Math.round(v * 255 / 9), 0],
+    amber: (v) => [Math.round(v * 255 / 9), Math.round(v * 160 / 9), 0],
+    blue:  (v) => [0, Math.round(v * 90 / 9), Math.round(v * 255 / 9)],
+};
+
+// ============================================================
+//  テキストファイル読み込み
+// ============================================================
+$('txtFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setStatus('読み込み中...');
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+        const text = ev.target.result;
+        parseFrames(text);
+    };
+    reader.onerror = () => setStatus('⚠️ ファイル読み込みエラー');
+    reader.readAsText(file, 'utf-8');
+});
+
+function parseFrames(text) {
+    // 改行で分割、空行除去（\r\n にも対応）
+    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+
+    if (lines.length === 0) {
+        setStatus('⚠️ フレームデータが空です');
+        return;
+    }
+
+    // 行幅は最初の行から決定
+    frameW = lines[0].length;
+
+    // 有効な行（幅が一致するもの）を収集
+    const validLines = lines.filter(l => l.length === frameW);
+
+    if (validLines.length === 0) {
+        setStatus('⚠️ 有効な行がありません');
+        return;
+    }
+
+    // 16:9 比率で frameH を推定
+    frameH = Math.round(frameW * 0.5625);
+    if (frameH < 1) frameH = 1;
+
+    // validLines を frameH 行ごとにフレームへ分割
+    frames = [];
+    for (let i = 0; i + frameH <= validLines.length; i += frameH) {
+        frames.push(validLines.slice(i, i + frameH));
+    }
+
+    // フレームが全く取れなかった場合：1行=1フレームの旧形式
+    if (frames.length === 0) {
+        frames = validLines.map(l => [l]);
+        frameH = 1;
+    }
+
+    canvas.width  = frameW;
+    canvas.height = frameH;
+    canvas.classList.add('active');
+    
+    // Canvas コンテキストを取得し直す（width/height変更後は再取得が必要）
+    ctx = canvas.getContext('2d', { willReadFrequently: false });
+
+    currentFrame = 0;
+    renderFrame(0);
+
+    playBtn.disabled  = false;
+    stopBtn2.disabled = false;
+
+    const fps   = parseInt($('fpsSelect').value);
+    const totalS = (frames.length / fps).toFixed(1);
+    setStatus(`✅ ${frames.length} フレーム読み込み完了（${frameW}×${frameH}）`);
+    updateTimeInfo();
+}
+
+// ============================================================
+//  音声ファイル読み込み
+// ============================================================
+$('audioFile').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    audioPlayer.src = url;
+    audioPlayer.style.display = '';
+    audioSec.style.display    = '';
+});
+
+// ---- 音声セクション常時表示 ----
+audioSec.style.display = '';
+
+// ============================================================
+//  フレーム描画
+// ============================================================
+function renderFrame(index) {
+    if (!frames[index]) return;
+    const fLines  = frames[index];
+    const palette = PALETTES[$('paletteSelect').value] || PALETTES.gray;
+    const imgData = ctx.createImageData(frameW, frameH);
+    const d       = imgData.data;
+
+    for (let y = 0; y < frameH; y++) {
+        const line = fLines[y] || '';
+        for (let x = 0; x < frameW; x++) {
+            const ch  = line.charCodeAt(x) - 48; // '0'=48
+            const v   = (ch >= 0 && ch <= 9) ? ch : 0;
+            const [r, g, b] = palette(v);
+            const i   = (y * frameW + x) << 2;
+            d[i]   = r;
+            d[i+1] = g;
+            d[i+2] = b;
+            d[i+3] = 255;
+        }
+    }
+    ctx.putImageData(imgData, 0, 0);
+}
+
+// ============================================================
+//  再生ループ
+// ============================================================
+function startPlayback() {
+    if (isPlaying || frames.length === 0) return;
+    isPlaying    = true;
+    lastTimestamp = null;
+    frameAccum   = 0;
+
+    playBtn.style.display  = 'none';
+    pauseBtn.style.display = '';
+
+    // 音声同期
+    if (audioPlayer.src && audioPlayer.paused) {
+        const fps = parseInt($('fpsSelect').value);
+        audioPlayer.currentTime = currentFrame / fps;
+        audioPlayer.play().catch(() => {});
+    }
+
+    rafId = requestAnimationFrame(loop);
+}
+
+function loop(ts) {
+    if (!isPlaying) return;
+
+    if (lastTimestamp === null) { lastTimestamp = ts; }
+    const delta   = ts - lastTimestamp;
+    lastTimestamp = ts;
+    frameAccum   += delta;
+
+    const fps      = parseInt($('fpsSelect').value);
+    const msPerFrame = 1000 / fps;
+
+    while (frameAccum >= msPerFrame) {
+        frameAccum -= msPerFrame;
+        currentFrame++;
+        if (currentFrame >= frames.length) {
+            currentFrame = frames.length - 1;
+            renderFrame(currentFrame);
+            updateSeek();
+            updateTimeInfo();
+            stopPlayback();
+            return;
+        }
+    }
+
+    renderFrame(currentFrame);
+    updateSeek();
+    updateTimeInfo();
+
+    rafId = requestAnimationFrame(loop);
+}
+
+function pausePlayback() {
+    if (!isPlaying) return;
+    isPlaying = false;
+    cancelAnimationFrame(rafId);
+    rafId = null;
+    playBtn.style.display  = '';
+    pauseBtn.style.display = 'none';
+    if (audioPlayer.src && !audioPlayer.paused) audioPlayer.pause();
+}
+
+function stopPlayback() {
+    isPlaying    = false;
+    cancelAnimationFrame(rafId);
+    rafId        = null;
+    currentFrame = 0;
+    playBtn.style.display  = '';
+    playBtn.disabled       = false;
+    pauseBtn.style.display = 'none';
+    renderFrame(0);
+    updateSeek();
+    updateTimeInfo();
+    if (audioPlayer.src) {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+    }
+}
+
+// ============================================================
+//  ボタン
+// ============================================================
+playBtn.addEventListener ('click', startPlayback);
+pauseBtn.addEventListener('click', pausePlayback);
+stopBtn2.addEventListener('click', stopPlayback);
+
+// FPS 変更時に再生中なら再起動
+$('fpsSelect').addEventListener('change', () => {
+    if (isPlaying) { pausePlayback(); startPlayback(); }
+});
+
+// カラー変更
+$('paletteSelect').addEventListener('change', () => {
+    renderFrame(currentFrame);
+});
+
+// ============================================================
+//  シークバー
+// ============================================================
+function updateSeek() {
+    if (frames.length === 0) return;
+    const pct = (currentFrame / (frames.length - 1)) * 100;
+    seekFill.style.width    = pct + '%';
+    seekHandle.style.left   = pct + '%';
+}
+
+function seekToClientX(clientX) {
+    if (frames.length === 0) return;
+    const rect = seekWrap.getBoundingClientRect();
+    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    currentFrame = Math.round(pct * (frames.length - 1));
+    renderFrame(currentFrame);
+    updateSeek();
+    updateTimeInfo();
+    if (audioPlayer.src) {
+        const fps = parseInt($('fpsSelect').value);
+        audioPlayer.currentTime = currentFrame / fps;
+    }
+}
+
+seekWrap.addEventListener('click', e => {
+    seekToClientX(e.clientX);
+});
+
+// touch シーク（iPad Safari 対応: touchstart と touchmove の両方を処理）
+let seekTouching = false;
+seekWrap.addEventListener('touchstart', e => {
+    e.preventDefault();
+    seekTouching = true;
+    if (e.touches[0]) seekToClientX(e.touches[0].clientX);
+}, { passive: false });
+
+seekWrap.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (!seekTouching) return;
+    if (e.touches[0]) seekToClientX(e.touches[0].clientX);
+}, { passive: false });
+
+seekWrap.addEventListener('touchend', e => {
+    e.preventDefault();
+    seekTouching = false;
+}, { passive: false });
+
+// ============================================================
+//  時間表示
+// ============================================================
+function updateTimeInfo() {
+    if (frames.length === 0) { timeInfoEl.textContent = '-- / --'; return; }
+    const fps    = parseInt($('fpsSelect').value);
+    const cur    = (currentFrame / fps).toFixed(1);
+    const total  = ((frames.length - 1) / fps).toFixed(1);
+    timeInfoEl.textContent = `${cur}s / ${total}s  (fr ${currentFrame + 1} / ${frames.length})`;
+}
+
+function setStatus(msg) { statusEl.textContent = msg; }
+</script>
+</body>
+</html>
